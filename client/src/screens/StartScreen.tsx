@@ -5,8 +5,10 @@ interface StartScreenProps {
   provider: ProviderName | null;
   patientLang: "hi" | "bho";
   doctorLang: "ta" | "en";
+  patientGender: "male" | "female";
   onPatientLangChange: (lang: "hi" | "bho") => void;
   onDoctorLangChange: (lang: "ta" | "en") => void;
+  onPatientGenderChange: (gender: "male" | "female") => void;
   onStart: () => void;
 }
 
@@ -16,8 +18,10 @@ export function StartScreen({
   provider,
   patientLang,
   doctorLang,
+  patientGender,
   onPatientLangChange,
   onDoctorLangChange,
+  onPatientGenderChange,
   onStart,
 }: StartScreenProps) {
   return (
@@ -47,6 +51,23 @@ export function StartScreen({
           </select>
         </label>
       </section>
+
+      <div className="lang-toggle" role="group" aria-label="Patient gender (used for the pregnancy safety question)">
+        <button
+          type="button"
+          className={patientGender === "male" ? "active" : ""}
+          onClick={() => onPatientGenderChange("male")}
+        >
+          Male
+        </button>
+        <button
+          type="button"
+          className={patientGender === "female" ? "active" : ""}
+          onClick={() => onPatientGenderChange("female")}
+        >
+          Female
+        </button>
+      </div>
 
       <button className="primary-button" type="button" onClick={onStart}>
         New consultation

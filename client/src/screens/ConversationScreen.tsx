@@ -1,14 +1,17 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { MicButton } from "../components/MicButton";
 import { TranscriptBubble } from "../components/TranscriptBubble";
 import { ConfirmChip } from "../components/ConfirmChip";
+import { SafetyCard, type SafetyNote } from "../components/SafetyCard";
 import { speak } from "../voice/browserTts";
 import { translatePhrase, type Lang } from "../logic/phrases";
+import { containsSafetyTrigger, SAFETY_QUESTIONS, type SafetyQuestionId } from "../logic/safetyTriggers";
 import { transcribeAndTranslateViaApi, type ProviderName } from "../api";
 
 interface ConversationScreenProps {
   patientLang: "hi" | "bho";
   doctorLang: "ta" | "en";
+  patientGender: "male" | "female";
   provider: ProviderName | null;
   onBack: () => void;
 }
@@ -24,6 +27,9 @@ const NOT_CLEAR_HI = "Awaaz saaf nahi aayi, phone ke paas aakar boliye";
 const NOT_CLEAR_TA = "சத்தம் தெளிவாக கேட்கவில்லை, போனுக்கு அருகில் வந்து பேசுங்கள்";
 const LOW_CONFIDENCE_THRESHOLD = 0.6;
 const MIN_WORDS = 2;
+// Safety notes are always shown in Tamil on the doctor's card, regardless of
+// the doctor's chosen reading language.
+const SAFETY_ANSWER_TO_LANG: Lang = "ta";
 
 const PATIENT_LANG_NAME: Record<"hi" | "bho", string> = { hi: "Hindi", bho: "Bhojpuri" };
 const DOCTOR_LANG_NAME: Record<"ta" | "en", string> = { ta: "Tamil", en: "English" };
@@ -54,7 +60,7 @@ function langCode(lang: Lang): string {
   return "en-IN";
 }
 
-export function ConversationScreen({ patientLang, doctorLang, provider, onBack }: ConversationScreenProps) {
+export function ConversationScreen({ patientLang, doctorLang, patientGender, provider, onBack }: ConversationScreenProps) {
   // What the doctor hears (translated from the patient) and what the patient hears
   // (translated from the doctor), plus a confirmation chip of each speaker's own last turn.
   const [heardByDoctor, setHeardByDoctor] = useState<Heard>(EMPTY_HEARD);
@@ -69,9 +75,76 @@ export function ConversationScreen({ patientLang, doctorLang, provider, onBack }
   // mixed-language audio directly.
   const [doctorSpeakLang, setDoctorSpeakLang] = useState<"ta" | "en">(doctorLang);
 
+  // Safety-check state machine: a FIFO queue of not-yet-asked questions (a
+  // ref, since it's an imperative sequence rather than render state), which
+  // question is currently awaiting the patient's spoken answer, which
+  // questions have already been asked this consultation (asked at most once),
+  // and the collected answers shown on the doctor's safety card.
+  const safetyQueueRef = useRef<SafetyQuestionId[]>([]);
+  const [pendingSafetyQuestion, setPendingSafetyQuestion] = useState<SafetyQuestionId | null>(null);
+  const [askedQuestions, setAskedQuestions] = useState<Set<SafetyQuestionId>>(new Set());
+  const [safetyNotes, setSafetyNotes] = useState<SafetyNote[]>([]);
+
   const hasProvider = Boolean(provider && provider !== "none");
   const patientRecognitionLang = "hi-IN"; // Bhojpuri falls back to Hindi recognition
   const doctorRecognitionLang = langCode(doctorSpeakLang);
+
+  function askNextSafetyQuestion() {
+    const next = safetyQueueRef.current.shift();
+    if (!next) {
+      setPendingSafetyQuestion(null);
+      return;
+    }
+    setPendingSafetyQuestion(next);
+    setAskedQuestions((prev) => new Set(prev).add(next));
+    speak(SAFETY_QUESTIONS[next].hi, "hi-IN");
+  }
+
+  function triggerSafetyCheck() {
+    const notHandled = (id: SafetyQuestionId) =>
+      !askedQuestions.has(id) && pendingSafetyQuestion !== id && !safetyQueueRef.current.includes(id);
+
+    const toAsk: SafetyQuestionId[] = [];
+    if (notHandled("allergy")) toAsk.push("allergy");
+    if (notHandled("currentMedicine")) toAsk.push("currentMedicine");
+    if (patientGender === "female" && notHandled("pregnant")) toAsk.push("pregnant");
+    if (toAsk.length === 0) return;
+
+    const wasIdle = safetyQueueRef.current.length === 0 && pendingSafetyQuestion === null;
+    safetyQueueRef.current.push(...toAsk);
+    if (wasIdle) askNextSafetyQuestion();
+  }
+
+  function recordSafetyAnswer(questionId: SafetyQuestionId, original: string, translated: string) {
+    setSafetyNotes((prev) => [...prev.filter((note) => note.questionId !== questionId), { questionId, original, translated }]);
+  }
+
+  async function handleSafetyAnswerFromText(transcript: string, confidence: number, questionId: SafetyQuestionId) {
+    if (!transcript || confidence < LOW_CONFIDENCE_THRESHOLD) {
+      speak(NOT_CLEAR_HI, "hi-IN");
+      return;
+    }
+    const { text: translated } = translatePhrase(transcript, "hi", SAFETY_ANSWER_TO_LANG);
+    recordSafetyAnswer(questionId, transcript, translated);
+    askNextSafetyQuestion();
+  }
+
+  async function handleSafetyAnswerFromAudio(blob: Blob, questionId: SafetyQuestionId) {
+    setPatientBusy(true);
+    try {
+      const result = await transcribeAndTranslateViaApi(blob, SAFETY_ANSWER_TO_LANG);
+      if (result.originalText && result.translatedText) {
+        recordSafetyAnswer(questionId, result.originalText, result.translatedText);
+        askNextSafetyQuestion();
+      } else {
+        speak(NOT_CLEAR_HI, "hi-IN");
+      }
+    } catch {
+      speak(NOT_CLEAR_HI, "hi-IN");
+    } finally {
+      setPatientBusy(false);
+    }
+  }
 
   async function handleSpeechTurn(
     transcript: string,
@@ -93,9 +166,15 @@ export function ConversationScreen({ patientLang, doctorLang, provider, onBack }
     const { text: translated, matched } = translatePhrase(transcript, fromLang, toLang);
     setHeardByListener({ mainText: translated, subText: transcript, doubtful: !matched });
     speak(translated, langCode(toLang));
+
+    if (containsSafetyTrigger(transcript)) triggerSafetyCheck();
   }
 
   function handlePatientSpeech(transcript: string, confidence: number) {
+    if (pendingSafetyQuestion) {
+      void handleSafetyAnswerFromText(transcript, confidence, pendingSafetyQuestion);
+      return;
+    }
     void handleSpeechTurn(
       transcript,
       confidence,
@@ -123,6 +202,10 @@ export function ConversationScreen({ patientLang, doctorLang, provider, onBack }
   // translate it in one step, so mixed-language speech and long sentences
   // (no pause-based cutoff from a browser recognizer) are handled correctly.
   async function handlePatientAudio(blob: Blob) {
+    if (pendingSafetyQuestion) {
+      void handleSafetyAnswerFromAudio(blob, pendingSafetyQuestion);
+      return;
+    }
     setPatientBusy(true);
     try {
       const result = await transcribeAndTranslateViaApi(blob, doctorLang);
@@ -130,6 +213,7 @@ export function ConversationScreen({ patientLang, doctorLang, provider, onBack }
         setHeardByDoctor({ mainText: result.translatedText, subText: result.originalText, doubtful: false });
         setPatientSummary(shortSummary(result.originalText));
         speak(result.translatedText, langCode(doctorLang));
+        if (containsSafetyTrigger(result.originalText)) triggerSafetyCheck();
       } else {
         speak(NOT_CLEAR_HI, "hi-IN");
       }
@@ -148,6 +232,7 @@ export function ConversationScreen({ patientLang, doctorLang, provider, onBack }
         setHeardByPatient({ mainText: result.translatedText, subText: result.originalText, doubtful: false });
         setDoctorSummary(shortSummary(result.originalText));
         speak(result.translatedText, "hi-IN");
+        if (containsSafetyTrigger(result.originalText)) triggerSafetyCheck();
       } else {
         speak(NOT_CLEAR_TA, "ta-IN");
       }
@@ -172,6 +257,7 @@ export function ConversationScreen({ patientLang, doctorLang, provider, onBack }
           doubtful={heardByDoctor.doubtful}
           placeholder="Patient's speech will appear here"
         />
+        <SafetyCard notes={safetyNotes} doctorLang={doctorLang} onRunCheck={triggerSafetyCheck} />
         <ConfirmChip summary={doctorSummary} onRepeat={() => speak(heardByPatient.mainText, "hi-IN")} />
         {!hasProvider && (
           <div className="lang-toggle" role="group" aria-label="Doctor speaking language">
@@ -206,6 +292,11 @@ export function ConversationScreen({ patientLang, doctorLang, provider, onBack }
 
       <section className="half patient-half">
         <h2 className="half-label">Patient · {PATIENT_LANG_NAME[patientLang]}</h2>
+        {pendingSafetyQuestion && (
+          <div className="safety-question-banner" role="status">
+            ❓ {SAFETY_QUESTIONS[pendingSafetyQuestion].hi}
+          </div>
+        )}
         <MicButton
           lang={patientRecognitionLang}
           colorClass="patient-mic"

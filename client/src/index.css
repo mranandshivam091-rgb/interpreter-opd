@@ -250,8 +250,74 @@ body {
 }
 
 .lang-toggle button.active {
+  background: #1a73e8;
+  color: white;
+}
+
+.doctor-half .lang-toggle button.active {
   background: #06243f;
   color: #cfe2ff;
+}
+
+.safety-card {
+  width: 100%;
+  background: #fdecea;
+  border: 2px solid #c62828;
+  border-radius: 12px;
+  padding: 0.75rem 1rem;
+  color: #7a0000;
+  text-align: left;
+}
+
+.safety-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.safety-card-header h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.safety-check-button {
+  min-height: 40px;
+  padding: 0 0.75rem;
+  border-radius: 999px;
+  border: 2px solid #c62828;
+  background: white;
+  color: #c62828;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.safety-note-list {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.safety-note-list li.allergy {
+  font-weight: 700;
+}
+
+.safety-note-original {
+  opacity: 0.75;
+  font-size: 0.85em;
+}
+
+.safety-question-banner {
+  background: #fff3cd;
+  color: #664d03;
+  border-radius: 12px;
+  padding: 0.5rem 0.75rem;
+  text-align: center;
+  font-weight: 600;
 }
 
 .mic-level-meter {

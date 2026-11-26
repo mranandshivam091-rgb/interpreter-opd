@@ -11,6 +11,7 @@ export default function App() {
   const [screen, setScreen] = useState<Screen>("start");
   const [patientLang, setPatientLang] = useState<"hi" | "bho">("hi");
   const [doctorLang, setDoctorLang] = useState<"ta" | "en">("ta");
+  const [patientGender, setPatientGender] = useState<"male" | "female">("female");
 
   useEffect(() => {
     // If the health check fails entirely (server down), treat it the same as
@@ -25,6 +26,7 @@ export default function App() {
       <ConversationScreen
         patientLang={patientLang}
         doctorLang={doctorLang}
+        patientGender={patientGender}
         provider={provider}
         onBack={() => setScreen("start")}
       />
@@ -38,8 +40,10 @@ export default function App() {
         provider={provider}
         patientLang={patientLang}
         doctorLang={doctorLang}
+        patientGender={patientGender}
         onPatientLangChange={setPatientLang}
         onDoctorLangChange={setDoctorLang}
+        onPatientGenderChange={setPatientGender}
         onStart={() => setScreen("conversation")}
       />
     </>
