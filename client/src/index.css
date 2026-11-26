@@ -229,6 +229,31 @@ body {
   box-shadow: 0 0 0 6px rgba(255, 0, 0, 0.3);
 }
 
+.mic-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.lang-toggle {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.lang-toggle button {
+  min-width: 48px;
+  min-height: 40px;
+  border-radius: 999px;
+  border: 2px solid currentColor;
+  background: transparent;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.lang-toggle button.active {
+  background: #06243f;
+  color: #cfe2ff;
+}
+
 .mic-level-meter {
   width: 120px;
   height: 10px;

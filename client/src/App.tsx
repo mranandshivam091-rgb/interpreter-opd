@@ -22,7 +22,12 @@ export default function App() {
 
   if (screen === "conversation") {
     return (
-      <ConversationScreen patientLang={patientLang} doctorLang={doctorLang} onBack={() => setScreen("start")} />
+      <ConversationScreen
+        patientLang={patientLang}
+        doctorLang={doctorLang}
+        provider={provider}
+        onBack={() => setScreen("start")}
+      />
     );
   }
 
